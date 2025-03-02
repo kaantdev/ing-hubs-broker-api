@@ -7,8 +7,8 @@ import com.ing.hubs.broker_api.entity.Order;
 import com.ing.hubs.broker_api.enums.OrderSide;
 import com.ing.hubs.broker_api.enums.OrderStatus;
 import com.ing.hubs.broker_api.mapper.OrderMapper;
-import com.ing.hubs.broker_api.repository.AssetRepository;
 import com.ing.hubs.broker_api.repository.OrderRepository;
+import com.ing.hubs.broker_api.service.AssetService;
 import com.ing.hubs.broker_api.service.OrderService;
 import jakarta.annotation.PostConstruct;
 import jakarta.transaction.Transactional;
@@ -17,18 +17,16 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Value;
 
-
 import java.time.LocalDateTime;
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.Set;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 @Slf4j
 @RequiredArgsConstructor
 public class OrderServiceImpl implements OrderService {
 
-    private final AssetRepository assetRepository;
+    private final AssetService assetService;
     private final OrderRepository orderRepository;
     private final OrderMapper orderMapper;
     private Set<String> validAssets;
@@ -41,46 +39,26 @@ public class OrderServiceImpl implements OrderService {
         this.validAssets = new HashSet<>(Arrays.asList(validAssetsProperty.split(",")));
     }
 
-
     @Transactional
     @Override
     public OrderResponseDTO createOrder(OrderRequestDTO request) {
+        validateRequest(request);
+
         Long customerId = request.getCustomerId();
-        String assetName = request.getAssetName();
         OrderSide side = OrderSide.valueOf(request.getSide());
         int size = request.getSize();
         double price = request.getPrice();
+        String assetName = request.getAssetName().toUpperCase();
 
-        if (size <= 0 || price <= 0) {
-            throw new IllegalArgumentException("Size and price must be greater than zero.");
-        }
-
-        if (!validAssets.contains(request.getAssetName().toUpperCase())) {
-            throw new IllegalArgumentException("Invalid asset name: " + request.getAssetName());
-        }
+        Asset tryAsset = assetService.findOrCreateTryAsset(customerId);
 
         if (side == OrderSide.BUY) {
-            Asset tryBalance = assetRepository.findByCustomerIdAndAssetName(customerId, "TRY")
-                    .orElseThrow(() -> new RuntimeException("TRY balance not found for customer: " + customerId));
-
-            double totalCost = size * price;
-            if (tryBalance.getUsableSize() < totalCost) {
-                throw new RuntimeException("Insufficient TRY balance. Available: " + tryBalance.getUsableSize());
-            }
-
-            tryBalance.setUsableSize(tryBalance.getUsableSize() - totalCost);
-            assetRepository.save(tryBalance);
+            handleBuyOrder(tryAsset, size, price);
+        } else {
+            Asset stockAsset = assetService.findOrCreateAsset(customerId, assetName); // asset stock only for sell orders
+            handleSellOrder(stockAsset, size);
         }
-        if (side == OrderSide.SELL) {
-            Asset asset = assetRepository.findByCustomerIdAndAssetName(customerId, assetName)
-                    .orElseThrow(() -> new RuntimeException("Asset not found: " + assetName));
 
-            if (asset.getUsableSize() < size) {
-                throw new RuntimeException("Not enough shares to sell. Available: " + asset.getUsableSize());
-            }
-            asset.setUsableSize(asset.getUsableSize() - size);
-            assetRepository.save(asset);
-        }
         Order order = orderMapper.toEntity(request);
         order.setStatus(OrderStatus.PENDING);
         order.setCreateDate(LocalDateTime.now());
@@ -89,50 +67,111 @@ public class OrderServiceImpl implements OrderService {
         return orderMapper.toResponse(order);
     }
 
-
+    @Transactional
     @Override
     public void matchOrder(Long orderId) {
-
+        Order order = getPendingOrder(orderId);
+        updateCustomerAssets(order);
+        order.setStatus(OrderStatus.MATCHED);
+        orderRepository.save(order);
     }
 
     @Transactional
     @Override
     public void cancelOrder(Long orderId) {
-        Order order = orderRepository.findById(orderId)
-                .orElseThrow(() -> new RuntimeException("Order not found with ID: " + orderId));
-
-        if (!OrderStatus.PENDING.equals(order.getStatus())) {
-            throw new RuntimeException("Only PENDING orders can be canceled.");
-        }
+        Order order = getPendingOrder(orderId);
 
         if (order.getOrderSide() == OrderSide.BUY) {
-            cancelBuyOrder(order);
+            refundBuyOrder(order);
         } else {
-            cancelSellOrder(order);
+            refundSellOrder(order);
         }
 
         order.setStatus(OrderStatus.CANCELED);
         orderRepository.save(order);
     }
 
-    private void cancelBuyOrder(Order order) {
-        double totalCost = order.getSize() * order.getPrice();
-        Long customerId = order.getCustomer().getId();
-
-        Asset tryAsset = assetRepository.findByCustomerIdAndAssetName(customerId, "TRY")
-                .orElseThrow(() -> new RuntimeException("TRY balance not found for customer: " + customerId));
-
-        tryAsset.setUsableSize(tryAsset.getUsableSize() + totalCost);
-        assetRepository.save(tryAsset);
+    @Transactional
+    @Override
+    public List<OrderResponseDTO> listOrders(Long customerId, LocalDateTime startDate, LocalDateTime endDate, Optional<OrderSide> side, Optional<OrderStatus> status) {
+        return orderRepository.findByCustomerIdAndCreateDateBetween(customerId, startDate, endDate)
+                .stream()
+                .filter(order -> side.map(s -> s == order.getOrderSide()).orElse(true))
+                .filter(order -> status.map(s -> s == order.getStatus()).orElse(true))
+                .map(orderMapper::toResponse)
+                .collect(Collectors.toList());
     }
 
-    private void cancelSellOrder(Order order) {
+    @Override
+    public List<OrderResponseDTO> getPendingOrders() {
+        return orderRepository.findByStatus(OrderStatus.PENDING)
+                .stream()
+                .map(orderMapper::toResponse)
+                .collect(Collectors.toList());
+    }
+
+    private void validateRequest(OrderRequestDTO request) {
+        if (request.getSize() <= 0 || request.getPrice() <= 0) {
+            throw new IllegalArgumentException("Size and price must be greater than zero.");
+        }
+        if (!validAssets.contains(request.getAssetName().toUpperCase())) {
+            throw new IllegalArgumentException("Invalid asset name: " + request.getAssetName());
+        }
+    }
+
+    private Order getPendingOrder(Long orderId) {
+        return orderRepository.findById(orderId)
+                .filter(order -> order.getStatus() == OrderStatus.PENDING)
+                .orElseThrow(() -> new RuntimeException("Order not found or not pending: " + orderId));
+    }
+
+    private void handleBuyOrder(Asset tryAsset, int size, double price) {
+        double totalCost = size * price;
+        if (tryAsset.getUsableSize() < totalCost) {
+            throw new RuntimeException("Insufficient TRY balance. Available: " + tryAsset.getUsableSize());
+        }
+        tryAsset.setUsableSize(tryAsset.getUsableSize() - totalCost);
+        assetService.saveAsset(tryAsset);
+    }
+
+    private void handleSellOrder(Asset stockAsset, int size) {
+        if (stockAsset.getUsableSize() < size) {
+            throw new RuntimeException("Not enough shares to sell. Available: " + stockAsset.getUsableSize());
+        }
+        stockAsset.setUsableSize(stockAsset.getUsableSize() - size);
+        assetService.saveAsset(stockAsset);
+    }
+
+    private void refundBuyOrder(Order order) {
+        Asset tryAsset = assetService.findOrCreateTryAsset(order.getCustomer().getId());
+        double totalCost = order.getSize() * order.getPrice();
+        tryAsset.setUsableSize(tryAsset.getUsableSize() + totalCost);
+        assetService.saveAsset(tryAsset);
+    }
+
+    private void refundSellOrder(Order order) {
+        Asset stockAsset = assetService.findOrCreateAsset(order.getCustomer().getId(), order.getAssetName());
+        stockAsset.setUsableSize(stockAsset.getUsableSize() + order.getSize());
+        assetService.saveAsset(stockAsset);
+    }
+
+    private void updateCustomerAssets(Order order) {
         Long customerId = order.getCustomer().getId();
+        Asset tryAsset = assetService.findOrCreateTryAsset(customerId);
+        Asset stockAsset = assetService.findOrCreateAsset(customerId, order.getAssetName());
+        double totalAmount = order.getSize() * order.getPrice();
 
-        Asset asset = assetRepository.findByCustomerIdAndAssetName(customerId, order.getAssetName())
-                .orElseThrow(() -> new RuntimeException("Asset not found: " + order.getAssetName()));
+        if (order.getOrderSide() == OrderSide.BUY) {
+            tryAsset.setSize(tryAsset.getSize() - totalAmount);
+            stockAsset.setSize(stockAsset.getSize() + order.getSize());
+            stockAsset.setUsableSize(stockAsset.getUsableSize() + order.getSize());
+        } else {
+            stockAsset.setSize(stockAsset.getSize() - order.getSize());
+            tryAsset.setUsableSize(tryAsset.getUsableSize() + totalAmount);
+            tryAsset.setSize(tryAsset.getSize() + totalAmount);
+        }
 
-        asset.setUsableSize(asset.getUsableSize() + order.getSize());
-        assetRepository.save(asset);
+        assetService.saveAsset(tryAsset);
+        assetService.saveAsset(stockAsset);
     }
 }
