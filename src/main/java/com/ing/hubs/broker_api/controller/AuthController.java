@@ -1,6 +1,7 @@
 package com.ing.hubs.broker_api.controller;
 
 import com.ing.hubs.broker_api.dto.AuthRequestDTO;
+import com.ing.hubs.broker_api.dto.AuthResponseDTO;
 import com.ing.hubs.broker_api.service.AuthService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -14,8 +15,8 @@ public class AuthController {
     private final AuthService authService;
 
     @PostMapping("/login")
-    public ResponseEntity<String> login(@RequestBody AuthRequestDTO authRequest) {
+    public ResponseEntity<AuthResponseDTO> login(@RequestBody AuthRequestDTO authRequest) {
         String token = authService.authenticate(authRequest.getUsername(), authRequest.getPassword());
-        return ResponseEntity.ok(token);
+        return ResponseEntity.ok(new AuthResponseDTO(token));
     }
 }

@@ -25,7 +25,6 @@ public class AssetController {
 
     @PostMapping("/withdraw")
     public ResponseEntity<AssetTransactionResponseDTO> withdraw(@AuthenticationPrincipal UserDetails userDetails,
-                                                                @RequestParam Long customerId,
                                                                 @RequestBody AssetTransactionRequestDTO request) {
         AssetTransactionResponseDTO response = assetService.withdrawMoney(request.getCustomerId(), request.getAmount());
         return ResponseEntity.ok(response);

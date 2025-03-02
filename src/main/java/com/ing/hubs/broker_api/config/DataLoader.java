@@ -19,10 +19,10 @@ public class DataLoader {
     @Bean
     CommandLineRunner loadData() {
         return args -> {
-            if (customerRepository.count() == 0) { // Eğer kullanıcı yoksa ekleyelim
+            if (customerRepository.count() == 0) {
                 Customer admin = new Customer();
                 admin.setUsername("admin");
-                admin.setPassword(passwordEncoder.encode("admin123")); // Şifre bcrypt ile hashleniyor
+                admin.setPassword(passwordEncoder.encode("admin123"));
                 admin.setRole(Role.ROLE_ADMIN);
                 customerRepository.save(admin);
 
@@ -31,8 +31,6 @@ public class DataLoader {
                 user.setPassword(passwordEncoder.encode("user123"));
                 user.setRole(Role.ROLE_USER);
                 customerRepository.save(user);
-
-                System.out.println("Dummy kullanıcılar eklendi: admin / user");
             }
         };
     }

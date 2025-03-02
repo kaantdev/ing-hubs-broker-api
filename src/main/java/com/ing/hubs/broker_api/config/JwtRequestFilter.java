@@ -1,6 +1,5 @@
 package com.ing.hubs.broker_api.config;
 
-import com.ing.hubs.broker_api.service.AuthService;
 import com.ing.hubs.broker_api.service.impl.CustomUserDetailsServiceImpl;
 import com.ing.hubs.broker_api.util.JwtUtil;
 import io.jsonwebtoken.ExpiredJwtException;

@@ -12,7 +12,7 @@ import java.util.function.Function;
 @Component
 public class JwtUtil {
 
-    private static final String SECRET_KEY = "mySecretKey";
+    private static final String SECRET_KEY = "mySecretKey2";
     private static final long EXPIRATION_TIME = 1000 * 60 * 60 * 1; // 1 hour
 
     public String generateToken(UserDetails userDetails) {

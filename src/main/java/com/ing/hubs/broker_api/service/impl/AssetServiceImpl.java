@@ -7,6 +7,7 @@ import com.ing.hubs.broker_api.exception.InsufficientBalanceException;
 import com.ing.hubs.broker_api.mapper.AssetMapper;
 import com.ing.hubs.broker_api.repository.AssetRepository;
 import com.ing.hubs.broker_api.service.AssetService;
+import com.ing.hubs.broker_api.util.AuthorizationUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -20,9 +21,11 @@ public class AssetServiceImpl implements AssetService {
 
     private final AssetRepository assetRepository;
     private final AssetMapper assetMapper;
+    private final AuthorizationUtil authorizationUtil;
 
     @Override
     public AssetTransactionResponseDTO depositMoney(Long customerId, double amount) {
+        authorizationUtil.validateUserAccess(customerId);
         Asset tryBalance = findOrCreateTryAsset(customerId);
 
         tryBalance.setSize(tryBalance.getSize() + amount);
@@ -32,6 +35,7 @@ public class AssetServiceImpl implements AssetService {
 
     @Override
     public AssetTransactionResponseDTO withdrawMoney(Long customerId, double amount) {
+        authorizationUtil.validateUserAccess(customerId);
         Asset tryBalance = findOrCreateTryAsset(customerId);
 
         if (tryBalance.getUsableSize() < amount) {

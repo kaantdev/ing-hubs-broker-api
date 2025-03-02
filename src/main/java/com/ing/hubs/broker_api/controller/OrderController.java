@@ -2,7 +2,6 @@ package com.ing.hubs.broker_api.controller;
 
 import com.ing.hubs.broker_api.dto.OrderRequestDTO;
 import com.ing.hubs.broker_api.dto.OrderResponseDTO;
-import com.ing.hubs.broker_api.entity.Customer;
 import com.ing.hubs.broker_api.enums.OrderSide;
 import com.ing.hubs.broker_api.enums.OrderStatus;
 import com.ing.hubs.broker_api.service.OrderService;
@@ -14,7 +13,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.security.Principal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;

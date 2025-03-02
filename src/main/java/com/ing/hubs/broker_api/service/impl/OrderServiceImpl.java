@@ -6,10 +6,12 @@ import com.ing.hubs.broker_api.entity.Asset;
 import com.ing.hubs.broker_api.entity.Order;
 import com.ing.hubs.broker_api.enums.OrderSide;
 import com.ing.hubs.broker_api.enums.OrderStatus;
+import com.ing.hubs.broker_api.exception.InsufficientBalanceException;
 import com.ing.hubs.broker_api.mapper.OrderMapper;
 import com.ing.hubs.broker_api.repository.OrderRepository;
 import com.ing.hubs.broker_api.service.AssetService;
 import com.ing.hubs.broker_api.service.OrderService;
+import com.ing.hubs.broker_api.util.AuthorizationUtil;
 import jakarta.annotation.PostConstruct;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
@@ -28,8 +30,10 @@ public class OrderServiceImpl implements OrderService {
 
     private final AssetService assetService;
     private final OrderRepository orderRepository;
+    private final AuthorizationUtil authorizationUtil;
     private final OrderMapper orderMapper;
     private Set<String> validAssets;
+
 
     @Value("${app.valid-assets}")
     private String validAssetsProperty;
@@ -42,14 +46,14 @@ public class OrderServiceImpl implements OrderService {
     @Transactional
     @Override
     public OrderResponseDTO createOrder(OrderRequestDTO request) {
+        authorizationUtil.validateUserAccess(request.getCustomerId());
         validateRequest(request);
-
         Long customerId = request.getCustomerId();
         OrderSide side = OrderSide.valueOf(request.getSide());
         int size = request.getSize();
         double price = request.getPrice();
-        String assetName = request.getAssetName().toUpperCase();
 
+        String assetName = request.getAssetName().toUpperCase();
         Asset tryAsset = assetService.findOrCreateTryAsset(customerId);
 
         if (side == OrderSide.BUY) {
@@ -80,7 +84,7 @@ public class OrderServiceImpl implements OrderService {
     @Override
     public void cancelOrder(Long orderId) {
         Order order = getPendingOrder(orderId);
-
+        authorizationUtil.validateUserAccess(order.getCustomer().getId());
         if (order.getOrderSide() == OrderSide.BUY) {
             refundBuyOrder(order);
         } else {
@@ -94,6 +98,7 @@ public class OrderServiceImpl implements OrderService {
     @Transactional
     @Override
     public List<OrderResponseDTO> listOrders(Long customerId, LocalDateTime startDate, LocalDateTime endDate, Optional<OrderSide> side, Optional<OrderStatus> status) {
+        authorizationUtil.validateUserAccess(customerId);
         return orderRepository.findByCustomerIdAndCreateDateBetween(customerId, startDate, endDate)
                 .stream()
                 .filter(order -> side.map(s -> s == order.getOrderSide()).orElse(true))
@@ -120,15 +125,14 @@ public class OrderServiceImpl implements OrderService {
     }
 
     private Order getPendingOrder(Long orderId) {
-        return orderRepository.findById(orderId)
-                .filter(order -> order.getStatus() == OrderStatus.PENDING)
-                .orElseThrow(() -> new RuntimeException("Order not found or not pending: " + orderId));
+        return orderRepository.findByIdAndStatus(orderId, OrderStatus.PENDING)
+                .orElseThrow(() -> new RuntimeException("Order not found or already matched: " + orderId));
     }
 
     private void handleBuyOrder(Asset tryAsset, int size, double price) {
         double totalCost = size * price;
         if (tryAsset.getUsableSize() < totalCost) {
-            throw new RuntimeException("Insufficient TRY balance. Available: " + tryAsset.getUsableSize());
+            throw new InsufficientBalanceException("Insufficient TRY balance. Available: " + tryAsset.getUsableSize());
         }
         tryAsset.setUsableSize(tryAsset.getUsableSize() - totalCost);
         assetService.saveAsset(tryAsset);
@@ -136,7 +140,7 @@ public class OrderServiceImpl implements OrderService {
 
     private void handleSellOrder(Asset stockAsset, int size) {
         if (stockAsset.getUsableSize() < size) {
-            throw new RuntimeException("Not enough shares to sell. Available: " + stockAsset.getUsableSize());
+            throw new InsufficientBalanceException("Insufficient " + stockAsset.getAssetName() + " balance. Available: " + stockAsset.getUsableSize());
         }
         stockAsset.setUsableSize(stockAsset.getUsableSize() - size);
         assetService.saveAsset(stockAsset);
