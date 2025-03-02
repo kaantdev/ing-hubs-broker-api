@@ -2,12 +2,16 @@ package com.ing.hubs.broker_api.dto;
 
 import com.ing.hubs.broker_api.enums.OrderSide;
 import jakarta.validation.constraints.*;
+import lombok.AllArgsConstructor;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 import lombok.Setter;
 import java.io.Serializable;
 
 @Getter
 @Setter
+@AllArgsConstructor
+@NoArgsConstructor
 public class OrderRequestDTO implements Serializable {
     @NotNull(message = "Customer ID is required")
     private Long customerId;

@@ -39,7 +39,7 @@ public class OrderServiceImpl implements OrderService {
     private String validAssetsProperty;
 
     @PostConstruct
-    private void initializeValidAssets() {
+    public void initializeValidAssets() {
         this.validAssets = new HashSet<>(Arrays.asList(validAssetsProperty.split(",")));
     }
 
