@@ -1,6 +1,7 @@
 # Broker API
 
 Broker API is a **Spring Boot 3.4.3** microservice application designed to manage financial asset transactions through a REST API. This project was developed as part of the ING Hubs Case Study.
+
 ## Getting Started
 
 ### Dependencies
@@ -107,3 +108,19 @@ Use the following credentials to log in:
 - **Password:** `passing`
 
 Ensure that the JDBC URL is set to: `jdbc:h2:mem:brokerapi`
+
+## Postman Collection & Environment
+
+To test the API endpoints, you can use **Postman**. A collection of API requests along with an environment file is available in the `resources` directory.
+
+1. Import the **Postman Collection** from:
+   ```
+   src/main/resources/postman/ING Hubs Broker API.postman_collection.json
+   ```
+2. Import the **Postman Environment** from:
+   ```
+   src/main/resources/postman/ing hubs broker api env.postman_environment.json
+   ```
+3. Select the imported environment in Postman and update the `baseUrl` if necessary.
+
+Now you can easily test the API endpoints without manually configuring request details.
